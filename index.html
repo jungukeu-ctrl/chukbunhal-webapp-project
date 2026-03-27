@@ -1,14 +1,14 @@
-// 메모에서 RPE와 Reps를 더 정밀하게 추출 (지능형 버전 로직 반영)
+// 지능형 메모 분석기: RPE와 Reps 범위를 추출
 function parseNote(note) {
 if (!note) return null;
 const rawNote = String(note);
 
-// RPE 추출: rpe9, rpe 8.5 등
+// RPE 추출 (제공해주신 정규식 적용)
 let hRpe = NaN;
 const rpeMatch = rawNote.match(/rpe\s*(\d+(\.\d+)?)/i);
 if (rpeMatch) hRpe = parseFloat(rpeMatch[1]);
 
-// Reps 범위 추출: reps3-6, reps 8~12 등
+// Reps 범위 추출 (reps3-6, reps 8~12 등)
 let minR = null, maxR = null;
 const repsMatch = rawNote.match(/reps\s*(\d+)\s*[~-]\s*(\d+)/i);
 if (repsMatch) {
@@ -22,16 +22,19 @@ if (singleMatch) minR = maxR = parseInt(singleMatch[1]);
 return { rpe: hRpe, min: minR, max: maxR };
 }
 
-// 사용자님이 찾으신 코드의 4단계 그룹핑 로직 + 속도 최적화 통합
+// 4단계 우선순위 매칭 엔진
 function getSmartSuggestion(exName, targetRepsStr, targetRpe) {
 const targetName = exName.trim().toLowerCase().replace(/\s+/g, '');
 const tRpe = parseFloat(String(targetRpe).replace(/[^0-9.]/g, ""));
 
-// 목표 범위 설정
+// 프로그램 목표 반복수 범위 파싱
 let minR = 0, maxR = 999;
 let rangeMatch = String(targetRepsStr).match(/(\d+)\s*[~-]\s*(\d+)/);
-if (rangeMatch) { minR = parseInt(rangeMatch[1]); maxR = parseInt(rangeMatch[2]); }
-else { let val = parseInt(targetRepsStr); if (!isNaN(val)) minR = maxR = val; }
+if (rangeMatch) {
+minR = parseInt(rangeMatch[1]); maxR = parseInt(rangeMatch[2]);
+} else {
+let val = parseInt(targetRepsStr); if (!isNaN(val)) minR = maxR = val;
+}
 
 const candidates = APP_DATA.history.filter(row =>
 String(row[APP_DATA.colMap.name]).trim().toLowerCase().replace(/\s+/g, '') === targetName
@@ -50,15 +53,21 @@ isRpeMatch: (!isNaN(tRpe) && noteData && Math.abs(tRpe - noteData.rpe) < 0.1), i
 
     if (candidates.length === 0) return { text: "기록 없음", trends: [] };
 
-    // 4단계 우선순위 (P2와 P3 순서 바꿈)
-    let group1 = candidates.filter(c => c.isRpeMatch && c.isRepMatch);
-    if (group1.length > 0) return formatResult(group1, "P1 (완전 일치)");
+    // 정렬 순서: 무게 DESC -> 반복수 DESC -> 날짜 DESC
+    const sorter = (list) => list.sort((a, b) => (b.weight - a.weight) || (b.reps - a.reps) || (b.date - a.date));
 
-    let group2 = candidates.filter(c => c.isRepMatch); // 반복수 우선
-    if (group2.length > 0) return formatResult(group2, "P2 (Reps 일치)");
+    // P1: RPE & 반복수 범위 모두 일치
+    let p1 = candidates.filter(c => c.isRpeMatch && c.isRepMatch);
+    if (p1.length > 0) return formatResult(sorter(p1), "P1 (완전 일치)");
 
-    let group3 = candidates.filter(c => c.isRpeMatch); // RPE 차선
-    if (group3.length > 0) return formatResult(group3, "P3 (RPE 일치)");
+    // P2: 반복수 범위만 일치 (사용자님 우선순위 반영)
+    let p2 = candidates.filter(c => c.isRepMatch);
+    if (p2.length > 0) return formatResult(sorter(p2), "P2 (Reps 일치)");
 
-    return formatResult(candidates, "P4 (최근 기록)");
+    // P3: RPE만 일치
+    let p3 = candidates.filter(c => c.isRpeMatch);
+    if (p3.length > 0) return formatResult(sorter(p3), "P3 (RPE 일치)");
+
+    // P4: 전체 최고 기록 (Fallback)
+    return formatResult(sorter(candidates), "P4 (최근 기록)");
     }
