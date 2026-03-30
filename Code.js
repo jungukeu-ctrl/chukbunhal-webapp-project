@@ -193,3 +193,87 @@ function getSingleExSuggestion(exName, targetRepsStr) {
   };
   return findBestRecord(historyData, colMap, exName, targetRepsStr);
 }
+
+/* ==============================================
+   PART 4. 전체 데이터 1회 로드 (고도화용)
+   ============================================== */
+function getAllData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const progSheet = ss.getSheetByName('축분할정규화프로그램');
+  const historySheet = ss.getSheetByName('시트1');
+  const typeSheet = ss.getSheetByName('부위별운동');
+
+  if (!historySheet) return { error: true, message: "시트1 없음. 동기화 필요." };
+  if (!progSheet)    return { error: true, message: "축분할정규화프로그램 시트 없음." };
+
+  const progData    = progSheet.getDataRange().getValues();
+  const historyData = historySheet.getDataRange().getValues();
+  const typeData    = typeSheet ? typeSheet.getDataRange().getValues() : [];
+
+  // 대체운동 맵
+  const replacementMap = {};
+  for (let i = 1; i < typeData.length; i++) {
+    const key = String(typeData[i][0]) + "_" + String(typeData[i][1]);
+    if (!replacementMap[key]) replacementMap[key] = [];
+    replacementMap[key].push(String(typeData[i][2]));
+  }
+
+  // 기록 시트 컬럼 인덱스
+  const headers = historyData.length > 0
+    ? historyData[0].map(h => String(h).toLowerCase().trim().replace(/\s+/g, ''))
+    : [];
+  const excludeList = ['body', 'target', 'goal', 'plan', 'unit', '체중', '목표'];
+  const colMap = {
+    weight: findColIndex(headers, ['웨이트', 'weight', '무게', 'kg', 'lbs'], excludeList),
+    name:   findColIndex(headers, ['운동', 'exercise', 'name'], []),
+    reps:   findColIndex(headers, ['반복수', 'reps'], []),
+    date:   findColIndex(headers, ['헬스시작', '헬스 시작', '날짜', 'date'], []),
+    note:   findColIndex(headers, ['메모', 'notes'], [])
+  };
+
+  // 기록 배열 (유효한 행만)
+  const historyRecords = [];
+  for (let k = 1; k < historyData.length; k++) {
+    const row = historyData[k];
+    if (colMap.name === -1) continue;
+    const name   = String(row[colMap.name]).trim();
+    if (!name) continue;
+    const weight = colMap.weight > -1 ? parseFloat(String(row[colMap.weight]).replace(/[^0-9.]/g, "")) : NaN;
+    const reps   = colMap.reps   > -1 ? parseInt(row[colMap.reps]) : NaN;
+    const note   = (colMap.note  > -1 && row[colMap.note]) ? String(row[colMap.note]) : "";
+    const dateVal = colMap.date  > -1 ? row[colMap.date] : null;
+    const date   = dateVal ? new Date(dateVal) : new Date(0);
+    if (isNaN(weight) || weight <= 0 || isNaN(reps) || reps <= 0) continue;
+    historyRecords.push({
+      name:       name,
+      weight:     weight,
+      reps:       reps,
+      note:       note,
+      dateMs:     date.getTime(),
+      dateString: date.toDateString()
+    });
+  }
+
+  // 루틴 배열
+  const routineRows = [];
+  for (let i = 1; i < progData.length; i++) {
+    const row = progData[i];
+    routineRows.push({
+      program: String(row[0]),
+      week:    String(row[1]).replace(/[^0-9]/g, ""),
+      day:     String(row[2]).replace(/[^0-9]/g, ""),
+      part:    String(row[3]),
+      group:   String(row[4]),
+      name:    String(row[5]),
+      sets:    parseInt(row[6]) || 1,
+      reps:    String(row[7]),
+      rpe:     String(row[8])
+    });
+  }
+
+  return {
+    routineRows:    routineRows,
+    historyRecords: historyRecords,
+    replacements:   replacementMap
+  };
+}
