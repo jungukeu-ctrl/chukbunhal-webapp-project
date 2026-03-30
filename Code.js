@@ -12,7 +12,7 @@ function onOpen() {
 }
 
 function doGet() {
-  var output = HtmlService.createHtmlOutputFromFile('Index');
+  var output = HtmlService.createHtmlOutputFromFile('index');
   output.setTitle('축분할 코칭 보드')
         .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0') 
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
